@@ -1,6 +1,7 @@
 import 'package:delarms/core/theme/app_colors.dart';
 import 'package:delarms/core/theme/app_sizes.dart';
 import 'package:delarms/core/theme/app_typography.dart';
+import 'package:delarms/features/create_alarm/screen/create_alarm_screen.dart';
 import 'package:delarms/features/home/model/alarm_item_model.dart';
 import 'package:delarms/widgets/alarm_list_card.dart';
 import 'package:flutter/material.dart';
@@ -59,7 +60,8 @@ class _HomeScreenState extends State<HomeScreen> {
               child: ListView.separated(
                 padding: EdgeInsets.zero,
                 itemCount: alarmList.length,
-                separatorBuilder: (context, index) => const SizedBox(height: AppSizes.s16),
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: AppSizes.s16),
                 itemBuilder: (context, index) {
                   final alarm = alarmList[index];
 
@@ -78,6 +80,33 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ],
+        ),
+      ),
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(right: AppSizes.s8, bottom: AppSizes.s12),
+        child: FloatingActionButton(
+          onPressed: () {
+            showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              useSafeArea: true,
+              showDragHandle: true,
+              backgroundColor: AppColors.surface,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.94,
+              ),
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(AppSizes.r24),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              builder: (_) => const CreateAlarmScreen(),
+            );
+          },
+          backgroundColor: AppColors.primary,
+          shape: const CircleBorder(),
+          child: const Icon(Icons.add_rounded, color: Colors.white),
         ),
       ),
     );
