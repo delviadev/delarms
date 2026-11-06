@@ -23,6 +23,7 @@ class _AppCardState extends State<AppCard> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      margin: EdgeInsets.zero,
       padding: widget.padding,
       decoration: BoxDecoration(
         color: widget.backgroundColor,

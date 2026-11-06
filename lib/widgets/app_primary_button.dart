@@ -7,12 +7,18 @@ class AppPrimaryButton extends StatelessWidget {
   final String text;
   final VoidCallback onPressed;
   final IconData? icon;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final Color? iconBackgroundColor;
 
   const AppPrimaryButton({
     super.key,
     required this.text,
     required this.onPressed,
     this.icon,
+    this.backgroundColor = AppColors.primary,
+    this.foregroundColor = Colors.white,
+    this.iconBackgroundColor,
   });
 
   @override
@@ -23,8 +29,8 @@ class AppPrimaryButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppSizes.r16),
           ),
@@ -33,10 +39,23 @@ class AppPrimaryButton extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[Icon(icon), SizedBox(width: AppSizes.s8)],
+            if (icon != null) ...[
+              if (iconBackgroundColor case final backgroundColor?)
+                Container(
+                  padding: EdgeInsets.all(AppSizes.s4),
+                  decoration: BoxDecoration(
+                    color: backgroundColor,
+                    borderRadius: BorderRadius.circular(AppSizes.r8),
+                  ),
+                  child: Icon(icon),
+                )
+              else
+                Icon(icon),
+              SizedBox(width: AppSizes.s8),
+            ],
             Text(
               text,
-              style: AppTypography.labelLarge.copyWith(color: Colors.white),
+              style: AppTypography.labelLarge.copyWith(color: foregroundColor),
             ),
           ],
         ),

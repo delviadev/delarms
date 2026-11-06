@@ -1,3 +1,4 @@
+import 'package:delarms/features/alarm_alert/screen/alarm_alert_screen.dart';
 import 'package:delarms/features/home/screen/home_screen.dart';
 import 'package:flutter/material.dart';
 
@@ -10,6 +11,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(home: HomeScreen());
+    return MaterialApp(home: AlarmAlertScreen());
   }
 }

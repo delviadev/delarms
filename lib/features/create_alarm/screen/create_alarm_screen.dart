@@ -1,6 +1,7 @@
 import 'package:delarms/core/theme/app_colors.dart';
 import 'package:delarms/core/theme/app_sizes.dart';
 import 'package:delarms/core/theme/app_typography.dart';
+import 'package:delarms/features/create_alarm/screen/scan_qr_screen.dart';
 import 'package:delarms/widgets/app_card.dart';
 import 'package:delarms/widgets/app_primary_button.dart';
 import 'package:flutter/cupertino.dart';
@@ -29,6 +30,7 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
   int _minute = 30;
   int _preAlarmMinutes = 15;
   bool _isPreAlarmEnabled = false;
+  bool _hasAssignedQr = false;
   final Set<int> _selectedRepeatDays = {0};
   final TextEditingController _alarmLabelController = TextEditingController(
     text: 'Morning Energy & Hydrate',
@@ -350,28 +352,41 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text("Assigned QR Code", style: AppTypography.bodyMedium),
-                  Text("QR Code Position", style: AppTypography.bodyMedium),
+                  Text(
+                    _hasAssignedQr ? "QR code scanned" : "QR Code Position",
+                    style: AppTypography.bodyMedium,
+                  ),
                 ],
               ),
             ],
           ),
-          AppCard(
-            backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-            padding: EdgeInsets.symmetric(
-              horizontal: AppSizes.s16,
-              vertical: AppSizes.s8,
-            ),
-            child: Text(
-              "Change",
-              style: AppTypography.bodyMedium.copyWith(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
+          GestureDetector(
+            onTap: _scanAssignedQr,
+            child: AppCard(
+              backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+              padding: EdgeInsets.symmetric(
+                horizontal: AppSizes.s16,
+                vertical: AppSizes.s8,
+              ),
+              child: Text(
+                "Change",
+                style: AppTypography.bodyMedium.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _scanAssignedQr() async {
+    final scannedValue = await Navigator.of(context)
+        .push<String>(MaterialPageRoute(builder: (_) => const ScanQrScreen()));
+    if (!mounted || scannedValue == null) return;
+    setState(() => _hasAssignedQr = true);
   }
 
   Widget _numberPicker({
