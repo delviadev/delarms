@@ -11,6 +11,7 @@ class AppColors {
   static const Color secondaryContainer = Color(0xFFD8CEFF);
 
   static const Color deepSlate = Color(0xFF1E293B);
+  static const Color alarmBackground = Color(0xFF111827);
   static const Color softSlate = Color(0xFF68768A);
 
   static Color glassUltraThin = const Color(0xFFFBF9F5).withValues(alpha: 0.55);
