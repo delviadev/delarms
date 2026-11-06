@@ -1,11 +1,18 @@
+import 'dart:io';
+
 import 'package:delarms/core/theme/app_colors.dart';
 import 'package:delarms/core/theme/app_sizes.dart';
 import 'package:delarms/core/theme/app_typography.dart';
+import 'package:delarms/features/create_alarm/data/alarm_model.dart';
+import 'package:delarms/features/create_alarm/data/alarm_repository.dart';
+import 'package:delarms/features/create_alarm/data/qr_image_storage.dart';
 import 'package:delarms/widgets/app_card.dart';
 import 'package:delarms/widgets/app_primary_button.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
 
 class CreateAlarmScreen extends StatefulWidget {
   const CreateAlarmScreen({super.key});
@@ -24,15 +31,29 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
     'F',
     'S',
   ];
+  static const List<String> _weekdayNames = [
+    'Sun',
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+  ];
 
   int _hour = 6;
   int _minute = 30;
   int _preAlarmMinutes = 15;
   bool _isPreAlarmEnabled = false;
+  bool _isSaving = false;
+  XFile? _selectedQrImage;
   final Set<int> _selectedRepeatDays = {0};
-  final TextEditingController _alarmLabelController = TextEditingController(
-    text: 'Morning Energy & Hydrate',
-  );
+  final TextEditingController _alarmLabelController = TextEditingController();
+  final GlobalKey _qrSectionKey = GlobalKey();
+  final GlobalKey _repeatSectionKey = GlobalKey();
+  final Map<int, Offset> _pickerPointerPositions = {};
+  final Map<int, Duration> _pickerPointerTimes = {};
+  final Set<int> _pickerPointersMoved = {};
 
   late final FixedExtentScrollController _hourScrollController;
   late final FixedExtentScrollController _minuteScrollController;
@@ -74,6 +95,11 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
             children: [
               Text("New Alarm", style: AppTypography.headlineMedium),
               SizedBox(height: AppSizes.s12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Alarm Time *', style: AppTypography.bodyMedium),
+              ),
+              SizedBox(height: AppSizes.s8),
               _alarmTimeSection(),
               SizedBox(height: AppSizes.s24),
               _preAlarmAlertSection(),
@@ -97,13 +123,119 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
             AppSizes.s16,
           ),
           child: AppPrimaryButton(
-            text: 'Save alarm',
+            text: _isSaving ? 'Saving...' : 'Save alarm',
             icon: Icons.alarm_add_rounded,
-            onPressed: () {},
+            onPressed: () {
+              if (!_isSaving) _saveAlarm();
+            },
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _saveAlarm() async {
+    final label = _alarmLabelController.text.trim();
+    if (_selectedRepeatDays.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select at least one repeat day.')),
+      );
+      final sectionContext = _repeatSectionKey.currentContext;
+      if (sectionContext != null) {
+        await Scrollable.ensureVisible(
+          sectionContext,
+          duration: const Duration(milliseconds: 250),
+          alignment: 0.6,
+        );
+      }
+      return;
+    }
+
+    final selectedQrImage = _selectedQrImage;
+    if (selectedQrImage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Upload a QR code image to continue.')),
+      );
+      final sectionContext = _qrSectionKey.currentContext;
+      if (sectionContext != null) {
+        await Scrollable.ensureVisible(
+          sectionContext,
+          duration: const Duration(milliseconds: 250),
+          alignment: 0.6,
+        );
+      }
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    String? savedQrImagePath;
+    try {
+      savedQrImagePath = await QrImageStorage().saveCompressedImage(
+        selectedQrImage,
+      );
+      final repeatDays = _selectedRepeatDays.toList()..sort();
+      final alarm = Alarm(
+        hour: _hour,
+        minute: _minute,
+        label: label.isEmpty ? 'Wake Up' : label,
+        repeatDays: repeatDays.map((day) => _weekdayNames[day]).toList(),
+        preAlarmEnabled: _isPreAlarmEnabled,
+        preAlarmMinutes: _isPreAlarmEnabled ? _preAlarmMinutes : 0,
+        qrImagePath: savedQrImagePath,
+        isActive: true,
+      );
+      final id = await AlarmRepository.instance.createAlarm(alarm);
+      if (!mounted) return;
+
+      Navigator.of(context).pop(
+        Alarm(
+          id: id,
+          hour: alarm.hour,
+          minute: alarm.minute,
+          label: alarm.label,
+          repeatDays: alarm.repeatDays,
+          preAlarmEnabled: alarm.preAlarmEnabled,
+          preAlarmMinutes: alarm.preAlarmMinutes,
+          qrImagePath: alarm.qrImagePath,
+          isActive: alarm.isActive,
+        ),
+      );
+    } catch (error) {
+      var errorMessage = error.toString();
+      if (savedQrImagePath != null) {
+        try {
+          await QrImageStorage().deleteImage(savedQrImagePath);
+        } catch (cleanupError) {
+          errorMessage = '$errorMessage; cleanup failed: $cleanupError';
+        }
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save alarm: $errorMessage')),
+      );
+      setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _pickQrImage() async {
+    try {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+      if (!mounted || image == null) return;
+      setState(() => _selectedQrImage = image);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not select QR image: $error')),
+      );
+    }
+  }
+
+  void _togglePreAlarm() {
+    setState(() => _isPreAlarmEnabled = !_isPreAlarmEnabled);
   }
 
   Widget _alarmTimeSection() {
@@ -153,14 +285,30 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.notifications_active_outlined,
-                size: AppSizes.s20,
-                color: AppColors.primary,
-              ),
-              SizedBox(width: AppSizes.s8),
               Expanded(
-                child: Text('Pre-alarm alert', style: AppTypography.bodyMedium),
+                child: InkWell(
+                  onTap: _togglePreAlarm,
+                  borderRadius: BorderRadius.circular(AppSizes.r8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.notifications_active_outlined,
+                        size: AppSizes.s20,
+                        color: AppColors.primary,
+                      ),
+                      SizedBox(width: AppSizes.s8),
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: AppSizes.s8),
+                          child: Text(
+                            'Pre-alarm alert (Optional)',
+                            style: AppTypography.bodyMedium,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               Switch(
                 padding: EdgeInsets.zero,
@@ -173,9 +321,17 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
             ],
           ),
           SizedBox(height: AppSizes.s4),
-          Text(
-            "A pre-alarm to give you time to get ready before the main alarm rings.",
-            style: AppTypography.bodySmall.copyWith(color: AppColors.deepSlate),
+          InkWell(
+            onTap: _togglePreAlarm,
+            child: SizedBox(
+              width: double.infinity,
+              child: Text(
+                "A pre-alarm to give you time to get ready before the main alarm rings.",
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.deepSlate,
+                ),
+              ),
+            ),
           ),
           if (_isPreAlarmEnabled) ...[
             Column(
@@ -206,7 +362,7 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Alarm Label", style: AppTypography.bodyMedium),
+        Text("Alarm Label (Optional)", style: AppTypography.bodyMedium),
         SizedBox(height: AppSizes.s8),
         AppCard(
           backgroundColor: AppColors.surfaceDim,
@@ -223,7 +379,7 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                   textInputAction: TextInputAction.done,
                   style: AppTypography.bodyMedium,
                   decoration: const InputDecoration(
-                    hintText: 'Alarm name',
+                    hintText: 'Wake Up',
                     border: InputBorder.none,
                     counterText: '',
                     isDense: true,
@@ -245,14 +401,15 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
 
   Widget _repeatScheduleSection() {
     return Column(
+      key: _repeatSectionKey,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text("Repeat Schedule", style: AppTypography.bodyMedium),
+            Text("Repeat Schedule *", style: AppTypography.bodyMedium),
             Text(
-              "Every Week",
+              "Select at least one day",
               style: AppTypography.bodyMedium.copyWith(
                 color: AppColors.primary,
               ),
@@ -329,40 +486,66 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
 
   Widget _assignedQrCodeSection() {
     return AppCard(
+      key: _qrSectionKey,
       backgroundColor: AppColors.surfaceDim,
       padding: EdgeInsets.all(AppSizes.s16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              AppCard(
-                backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-                padding: EdgeInsets.all(AppSizes.s12),
-                child: Icon(
-                  Icons.qr_code,
-                  size: AppSizes.s20,
-                  color: AppColors.primary,
+          Expanded(
+            child: Row(
+              children: [
+                AppCard(
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                  padding: EdgeInsets.all(AppSizes.s12),
+                  child: _selectedQrImage == null
+                      ? Icon(
+                          Icons.qr_code,
+                          size: AppSizes.s20,
+                          color: AppColors.primary,
+                        )
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(AppSizes.r8),
+                          child: Image.file(
+                            File(_selectedQrImage!.path),
+                            width: AppSizes.s40,
+                            height: AppSizes.s40,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                 ),
-              ),
-              SizedBox(width: AppSizes.s12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Assigned QR Code", style: AppTypography.bodyMedium),
-                  Text("QR Code Position", style: AppTypography.bodyMedium),
-                ],
-              ),
-            ],
+                SizedBox(width: AppSizes.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("QR Code *", style: AppTypography.bodyMedium),
+                      Text(
+                        _selectedQrImage == null
+                            ? 'Required'
+                            : p.basename(_selectedQrImage!.path),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          AppCard(
-            backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-            padding: EdgeInsets.symmetric(
-              horizontal: AppSizes.s16,
-              vertical: AppSizes.s8,
+          SizedBox(width: AppSizes.s8),
+          TextButton(
+            onPressed: _isSaving ? null : _pickQrImage,
+            style: TextButton.styleFrom(
+              backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+              padding: EdgeInsets.symmetric(
+                horizontal: AppSizes.s16,
+                vertical: AppSizes.s8,
+              ),
             ),
             child: Text(
-              "Change",
+              _selectedQrImage == null ? 'Upload' : 'Change',
               style: AppTypography.bodyMedium.copyWith(
                 color: AppColors.primary,
                 fontWeight: FontWeight.w600,
@@ -390,8 +573,12 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
         (pickerContainerHeight - cardHeight) / 2 - arrowSize - AppSizes.s8;
     final picker = SizedBox(
       height: pickerContainerHeight,
-      child: GestureDetector(
-        onTap: onTap,
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: _onPickerPointerDown,
+        onPointerMove: _onPickerPointerMove,
+        onPointerUp: (event) => _onPickerPointerUp(event, onTap),
+        onPointerCancel: _onPickerPointerCancel,
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -456,35 +643,44 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
     return isCompact ? picker : Expanded(child: picker);
   }
 
+  void _onPickerPointerDown(PointerDownEvent event) {
+    _pickerPointerPositions[event.pointer] = event.position;
+    _pickerPointerTimes[event.pointer] = event.timeStamp;
+    _pickerPointersMoved.remove(event.pointer);
+  }
+
+  void _onPickerPointerMove(PointerMoveEvent event) {
+    final startPosition = _pickerPointerPositions[event.pointer];
+    if (startPosition != null &&
+        (event.position - startPosition).distance >= 8) {
+      _pickerPointersMoved.add(event.pointer);
+    }
+  }
+
+  void _onPickerPointerUp(PointerUpEvent event, VoidCallback? onTap) {
+    final startPosition = _pickerPointerPositions.remove(event.pointer);
+    final startTime = _pickerPointerTimes.remove(event.pointer);
+    final pointerMoved = _pickerPointersMoved.remove(event.pointer);
+    if (onTap == null || startPosition == null || startTime == null) return;
+
+    final elapsed = event.timeStamp - startTime;
+    if (!pointerMoved && elapsed < const Duration(milliseconds: 400)) onTap();
+  }
+
+  void _onPickerPointerCancel(PointerCancelEvent event) {
+    _pickerPointerPositions.remove(event.pointer);
+    _pickerPointerTimes.remove(event.pointer);
+    _pickerPointersMoved.remove(event.pointer);
+  }
+
   Future<void> _editAlarmTime({required bool isHour}) async {
     final current = isHour ? _hour : _minute;
-    final controller = TextEditingController(text: '$current');
-
     final result = await showDialog<int>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(isHour ? 'Pilih jam' : 'Pilih menit'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(context, int.tryParse(controller.text)),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
+      builder: (_) =>
+          _AlarmTimeInputDialog(initialValue: current, isHour: isHour),
     );
 
-    controller.dispose();
     if (!mounted || result == null) return;
 
     final value = result.clamp(0, isHour ? 23 : 59);
@@ -497,5 +693,72 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
         _minuteScrollController.jumpToItem(value);
       }
     });
+  }
+}
+
+class _AlarmTimeInputDialog extends StatefulWidget {
+  const _AlarmTimeInputDialog({
+    required this.initialValue,
+    required this.isHour,
+  });
+
+  final int initialValue;
+  final bool isHour;
+
+  @override
+  State<_AlarmTimeInputDialog> createState() => _AlarmTimeInputDialogState();
+}
+
+class _AlarmTimeInputDialogState extends State<_AlarmTimeInputDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: '${widget.initialValue}');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      surfaceTintColor: Colors.transparent,
+      title: Text(
+        widget.isHour ? 'Pilih jam' : 'Pilih menit',
+        style: AppTypography.headlineSmall.copyWith(color: AppColors.deepSlate),
+      ),
+      content: TextField(
+        controller: _controller,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        autofocus: true,
+        cursorColor: AppColors.primary,
+        style: AppTypography.bodyLarge.copyWith(color: AppColors.deepSlate),
+        decoration: InputDecoration(
+          focusedBorder: UnderlineInputBorder(
+            borderSide: BorderSide(color: AppColors.primary),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Batal'),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+          onPressed: () =>
+              Navigator.pop(context, int.tryParse(_controller.text)),
+          child: const Text('OK'),
+        ),
+      ],
+    );
   }
 }
